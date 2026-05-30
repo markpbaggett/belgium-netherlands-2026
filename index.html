@@ -1,0 +1,466 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0" />
+  <title>Belgium & Netherlands 2026</title>
+
+  <!-- Leaflet -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+  <!-- MarkerCluster -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css" />
+  <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css" />
+  <script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
+
+  <!-- Tailwind -->
+  <script src="https://cdn.tailwindcss.com"></script>
+
+  <style>
+    html, body { height: 100%; margin: 0; padding: 0; }
+    #map { height: 100%; width: 100%; }
+
+    /* Custom marker colors by category */
+    .marker-icon {
+      width: 32px;
+      height: 32px;
+      border-radius: 50% 50% 50% 0;
+      transform: rotate(-45deg);
+      border: 3px solid white;
+      box-shadow: 0 2px 6px rgba(0,0,0,0.4);
+    }
+    .cat-food      { background: #f59e0b; }
+    .cat-sight     { background: #3b82f6; }
+    .cat-museum    { background: #8b5cf6; }
+    .cat-nature    { background: #22c55e; }
+    .cat-shop      { background: #ec4899; }
+    .cat-stay      { background: #06b6d4; }
+    .cat-activity  { background: #f97316; }
+    .cat-default   { background: #6b7280; }
+
+    /* Popup */
+    .leaflet-popup-content-wrapper {
+      border-radius: 12px;
+      padding: 0;
+      overflow: hidden;
+      max-width: 280px;
+    }
+    .leaflet-popup-content {
+      margin: 0;
+      width: 100% !important;
+    }
+
+    /* Filter bar scrollable on mobile */
+    #filter-bar {
+      -webkit-overflow-scrolling: touch;
+      scrollbar-width: none;
+    }
+    #filter-bar::-webkit-scrollbar { display: none; }
+
+    /* Locate button */
+    #locate-btn {
+      position: fixed;
+      bottom: 96px;
+      right: 12px;
+      z-index: 1000;
+      width: 44px;
+      height: 44px;
+      border-radius: 50%;
+      background: white;
+      border: none;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      transition: background 0.15s;
+    }
+    #locate-btn:active { background: #f3f4f6; }
+    #locate-btn.locating { background: #eff6ff; }
+    #locate-btn.located  { background: #dcfce7; }
+
+    /* Accuracy circle pulse */
+    .user-dot {
+      width: 16px; height: 16px;
+      background: #3b82f6;
+      border: 3px solid white;
+      border-radius: 50%;
+      box-shadow: 0 0 0 4px rgba(59,130,246,0.3);
+      animation: pulse 2s infinite;
+    }
+    @keyframes pulse {
+      0%   { box-shadow: 0 0 0 0   rgba(59,130,246,0.4); }
+      70%  { box-shadow: 0 0 0 10px rgba(59,130,246,0);   }
+      100% { box-shadow: 0 0 0 0   rgba(59,130,246,0);    }
+    }
+
+    /* Active filter pill */
+    .filter-btn.active {
+      opacity: 1;
+      box-shadow: 0 0 0 2px white, 0 0 0 4px currentColor;
+    }
+    .filter-btn { opacity: 0.65; transition: opacity 0.15s, box-shadow 0.15s; }
+    .filter-btn:not(.active):hover { opacity: 0.9; }
+  </style>
+</head>
+<body class="bg-gray-900 text-white font-sans">
+
+  <!-- Header -->
+  <div class="fixed top-0 left-0 right-0 z-[1000] bg-white/95 backdrop-blur shadow-md">
+    <div class="flex items-center gap-2 px-3 py-2">
+      <span class="text-xl">🗺️</span>
+      <h1 class="font-bold text-gray-800 text-sm tracking-wide">Belgium &amp; Netherlands 2026</h1>
+    </div>
+
+    <!-- Category filter pills -->
+    <div id="filter-bar" class="flex gap-2 overflow-x-auto px-3 pb-2">
+      <button data-cat="all" class="filter-btn active flex-shrink-0 text-xs font-semibold px-3 py-1 rounded-full bg-gray-700 text-white" style="color:white">All</button>
+    </div>
+  </div>
+
+  <!-- Map fills remaining space -->
+  <div class="fixed inset-0 top-[72px]">
+    <div id="map"></div>
+  </div>
+
+  <!-- Locate me button -->
+  <button id="locate-btn" title="Find my location">
+    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none"
+         stroke="#374151" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <circle cx="12" cy="12" r="3"/>
+      <path d="M12 2v3M12 19v3M2 12h3M19 12h3"/>
+      <path d="M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8z" opacity="0.3" fill="#374151" stroke="none"/>
+    </svg>
+  </button>
+
+  <!-- Place detail sheet (slides up on mobile) -->
+  <div id="detail-sheet"
+       class="fixed bottom-0 left-0 right-0 z-[1001] bg-white rounded-t-2xl shadow-2xl transform translate-y-full transition-transform duration-300 max-h-[70vh] overflow-y-auto"
+       style="display:none">
+    <div class="w-10 h-1 bg-gray-300 rounded-full mx-auto mt-3 mb-1"></div>
+    <div id="detail-content" class="p-4"></div>
+  </div>
+
+  <script>
+    // ─── DATA ───────────────────────────────────────────────────────────────────
+    // Add your places here. Categories: food, sight, museum, nature, shop, stay, activity
+    const places = [
+      {
+        label: "Grand Place",
+        lat: 50.8467,
+        lng: 4.3525,
+        category: "sight",
+        description: "Brussels' stunning central square, surrounded by gilded Gothic, Baroque and neo-Gothic buildings. A UNESCO World Heritage Site and the heart of the city.",
+        thumbnail: "https://upload.wikimedia.org/wikipedia/commons/thumb/2/26/Grand-Place%2C_Brussels_-_panorama%2C_June_2018.jpg/1920px-Grand-Place%2C_Brussels_-_panorama%2C_June_2018.jpg"
+      },
+      {
+        label: "Manneken Pis",
+        lat: 50.8450,
+        lng: 4.3500,
+        category: "sight",
+        description: "Brussels' famous little bronze statue of a boy urinating into a fountain. Small but iconic — and often dressed in costume.",
+        thumbnail: ""
+      },
+      {
+        label: "Delirium Café",
+        lat: 50.8480,
+        lng: 4.3522,
+        category: "food",
+        description: "Home to over 2,000 beers. A Brussels institution and a must-visit for Belgian beer lovers.",
+        thumbnail: ""
+      },
+      {
+        label: "Rijksmuseum",
+        lat: 52.3600,
+        lng: 4.8852,
+        category: "museum",
+        description: "Netherlands' premier art museum with Dutch Golden Age masterpieces by Rembrandt, Vermeer, and more. Allow at least half a day.",
+        thumbnail: "https://upload.wikimedia.org/wikipedia/commons/thumb/d/d0/Rijksmuseum_2019.jpg/320px-Rijksmuseum_2019.jpg"
+      },
+      {
+        label: "Anne Frank House",
+        lat: 52.3752,
+        lng: 4.8840,
+        category: "museum",
+        description: "The hiding place of Anne Frank and her family during World War II. Book tickets well in advance — this is one of Amsterdam's most visited sites.",
+        thumbnail: ""
+      },
+      {
+        label: "Vondelpark",
+        lat: 52.3579,
+        lng: 4.8686,
+        category: "nature",
+        description: "Amsterdam's most beloved park — great for a picnic, bike ride, or people watching. Free open-air concerts in summer.",
+        thumbnail: ""
+      },
+      {
+        label: "Keukenhof Gardens",
+        lat: 52.2705,
+        lng: 4.5469,
+        category: "nature",
+        description: "The world's largest flower garden, famous for its stunning tulip displays. Open mid-March to mid-May.",
+        thumbnail: "https://upload.wikimedia.org/wikipedia/commons/thumb/2/21/Keukenhof_2014.jpg/320px-Keukenhof_2014.jpg"
+      },
+      {
+        label: "Thon Hotel EU",
+        lat: 50.8436,
+        lng: 4.3788,
+        category: "stay",
+        description: "📅 May 30–31\nRue de la Loi 75, Brussels 1040. Located in the European Quarter, a short walk from the European Parliament and easy metro access to the city center.",
+        thumbnail: ""
+      },
+      {
+        label: "Hilton Garden Inn Leiden",
+        lat: 52.1534,
+        lng: 4.4847,
+        category: "stay",
+        description: "📅 May 31–June 4\nHaagse Schouwweg 10, Leiden. Great base for exploring Leiden and day-tripping to Amsterdam, The Hague, and Keukenhof.",
+        thumbnail: ""
+      },
+      {
+        label: "B&B Hotel Brussels Airport",
+        lat: 50.9003,
+        lng: 4.4581,
+        category: "stay",
+        description: "📅 Booked — Brussels Airport\nWoluwelaan 140, Machelen 1831. Convenient airport hotel, easy access for early departures or late arrivals.",
+        thumbnail: ""
+      },
+      {
+        label: "Stroopwafels at Albert Heijn",
+        lat: 52.3731,
+        lng: 4.8965,
+        category: "food",
+        description: "Pick up a pack of fresh stroopwafels from any Albert Heijn. Place on top of a hot drink to soften the caramel — essential Dutch experience.",
+        thumbnail: ""
+      },
+      {
+        label: "Choco-Story Brussels",
+        lat: 50.84569563885766,
+        lng: 4.350160175861231,
+        category: "activity",
+        description: "Head to Choco-Story Brussels to learn the history of cocoa and take part in interactive masterclasses to make your own chocolate bars.",
+        thumbnail: ""
+      },
+      {
+        label: "Royal Belgian institute of Natural Sciences",
+        lat: 50.85110186249201,
+        lng: 4.360277600654013,
+        category: "museum",
+        description: " Walk 15 minutes to the Institute of Natural Sciences to see Europe’s largest dinosaur hall, featuring spectacular, towering Iguanodon skeletons.",
+        thumbnail: ""
+      },
+      {
+        label: "Belgian Comic Art Museum",
+        lat: 50.836670848286545,
+        lng: 4.376765531491479,
+        category: "museum",
+        description: "Visit the Belgian Comic Strip Center (a 12-minute walk) to see displays of iconic characters like The Smurfs and Tintin in a beautiful Art Nouveau building.",
+        thumbnail: ""
+      },
+      {
+        label: "Maison Dandoy - Grand Palace",
+        lat: 50.84747528072489,
+        lng: 4.3515559547034,
+        category: "food",
+        description: "Satisfy your sweet tooth with a fresh, warm Belgian waffle at Maison Dandoy right near the Grand-Place.",
+        thumbnail: ""
+      }
+    ];
+
+    // ─── CATEGORY CONFIG ─────────────────────────────────────────────────────────
+    const categoryConfig = {
+      food:     { label: "🍽 Food & Drink",  color: "#f59e0b", cls: "cat-food" },
+      sight:    { label: "🏛 Sights",         color: "#3b82f6", cls: "cat-sight" },
+      museum:   { label: "🖼 Museums",        color: "#8b5cf6", cls: "cat-museum" },
+      nature:   { label: "🌿 Nature",         color: "#22c55e", cls: "cat-nature" },
+      shop:     { label: "🛍 Shopping",       color: "#ec4899", cls: "cat-shop" },
+      stay:     { label: "🏨 Stay",           color: "#06b6d4", cls: "cat-stay" },
+      activity: { label: "🎯 Activities",     color: "#f97316", cls: "cat-activity" },
+    };
+
+    // ─── MAP SETUP ───────────────────────────────────────────────────────────────
+    const map = L.map('map', {
+      center: [51.5, 4.5],
+      zoom: 8,
+      zoomControl: false
+    });
+
+    L.control.zoom({ position: 'bottomright' }).addTo(map);
+
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
+      maxZoom: 19
+    }).addTo(map);
+
+    // ─── HELPERS ─────────────────────────────────────────────────────────────────
+    function makeIcon(category) {
+      const cfg = categoryConfig[category] || {};
+      const cls = cfg.cls || 'cat-default';
+      return L.divIcon({
+        className: '',
+        html: `<div class="marker-icon ${cls}"></div>`,
+        iconSize: [32, 32],
+        iconAnchor: [8, 30],
+        popupAnchor: [8, -30]
+      });
+    }
+
+    function showDetail(place) {
+      const cfg = categoryConfig[place.category] || { label: place.category, color: '#6b7280' };
+      const imgHtml = place.thumbnail
+        ? `<img src="${place.thumbnail}" alt="${place.label}" class="w-full h-40 object-cover rounded-xl mb-3" />`
+        : '';
+      document.getElementById('detail-content').innerHTML = `
+        ${imgHtml}
+        <div class="flex items-start justify-between gap-2 mb-1">
+          <h2 class="text-lg font-bold text-gray-900 leading-tight">${place.label}</h2>
+          <span class="flex-shrink-0 text-xs font-semibold px-2 py-0.5 rounded-full text-white" style="background:${cfg.color}">${cfg.label}</span>
+        </div>
+        <p class="text-sm text-gray-600 leading-relaxed whitespace-pre-line">${place.description}</p>
+        <button onclick="closeDetail()" class="mt-4 w-full py-2 rounded-xl bg-gray-100 text-gray-600 text-sm font-medium">Close</button>
+      `;
+      const sheet = document.getElementById('detail-sheet');
+      sheet.style.display = 'block';
+      requestAnimationFrame(() => sheet.classList.remove('translate-y-full'));
+    }
+
+    window.closeDetail = function() {
+      const sheet = document.getElementById('detail-sheet');
+      sheet.classList.add('translate-y-full');
+      setTimeout(() => { sheet.style.display = 'none'; }, 300);
+    };
+
+    // Close sheet when tapping map
+    map.on('click', closeDetail);
+
+    // ─── BUILD FILTERS ───────────────────────────────────────────────────────────
+    const usedCats = [...new Set(places.map(p => p.category))];
+    const filterBar = document.getElementById('filter-bar');
+
+    usedCats.forEach(cat => {
+      const cfg = categoryConfig[cat];
+      if (!cfg) return;
+      const btn = document.createElement('button');
+      btn.dataset.cat = cat;
+      btn.className = 'filter-btn flex-shrink-0 text-xs font-semibold px-3 py-1 rounded-full text-white';
+      btn.style.background = cfg.color;
+      btn.textContent = cfg.label;
+      filterBar.appendChild(btn);
+    });
+
+    // ─── CLUSTER GROUP ───────────────────────────────────────────────────────────
+    const clusterGroup = L.markerClusterGroup({
+      showCoverageOnHover: false,
+      maxClusterRadius: 50,
+      iconCreateFunction(cluster) {
+        const count = cluster.getChildCount();
+        return L.divIcon({
+          html: `<div class="flex items-center justify-center w-9 h-9 rounded-full bg-blue-600 text-white text-xs font-bold shadow-lg border-2 border-white">${count}</div>`,
+          className: '',
+          iconSize: [36, 36]
+        });
+      }
+    });
+    map.addLayer(clusterGroup);
+
+    // ─── MARKERS ─────────────────────────────────────────────────────────────────
+    const markerData = places.map(place => {
+      const marker = L.marker([place.lat, place.lng], { icon: makeIcon(place.category) });
+      marker.on('click', (e) => {
+        L.DomEvent.stopPropagation(e);
+        showDetail(place);
+      });
+      marker._placeCategory = place.category;
+      clusterGroup.addLayer(marker);
+      return marker;
+    });
+
+    // ─── FILTER LOGIC ────────────────────────────────────────────────────────────
+    let activeFilter = 'all';
+
+    filterBar.addEventListener('click', e => {
+      const btn = e.target.closest('[data-cat]');
+      if (!btn) return;
+      activeFilter = btn.dataset.cat;
+
+      filterBar.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+
+      clusterGroup.clearLayers();
+      markerData.forEach(m => {
+        if (activeFilter === 'all' || m._placeCategory === activeFilter) {
+          clusterGroup.addLayer(m);
+        }
+      });
+      closeDetail();
+    });
+
+    // ─── GEOLOCATION ─────────────────────────────────────────────────────────────
+    let userMarker = null;
+    let accuracyCircle = null;
+    let watchId = null;
+    const locateBtn = document.getElementById('locate-btn');
+
+    function onLocationFound(e) {
+      const { latlng, accuracy } = e;
+
+      if (userMarker) {
+        userMarker.setLatLng(latlng);
+        accuracyCircle.setLatLng(latlng).setRadius(accuracy);
+      } else {
+        userMarker = L.marker(latlng, {
+          icon: L.divIcon({
+            className: '',
+            html: `<div class="user-dot"></div>`,
+            iconSize: [16, 16],
+            iconAnchor: [8, 8]
+          }),
+          zIndexOffset: 1000
+        }).addTo(map);
+
+        accuracyCircle = L.circle(latlng, {
+          radius: accuracy,
+          color: '#3b82f6',
+          fillColor: '#3b82f6',
+          fillOpacity: 0.1,
+          weight: 1
+        }).addTo(map);
+
+        map.setView(latlng, 14);
+      }
+
+      locateBtn.classList.remove('locating');
+      locateBtn.classList.add('located');
+      locateBtn.title = `Accuracy: ~${Math.round(accuracy)}m`;
+    }
+
+    function onLocationError(e) {
+      locateBtn.classList.remove('locating', 'located');
+      alert('Could not get your location: ' + e.message);
+      stopWatching();
+    }
+
+    function stopWatching() {
+      if (watchId !== null) {
+        navigator.geolocation.clearWatch(watchId);
+        watchId = null;
+      }
+    }
+
+    map.on('locationfound', onLocationFound);
+    map.on('locationerror', onLocationError);
+
+    locateBtn.addEventListener('click', () => {
+      if (locateBtn.classList.contains('located')) {
+        // Already located — pan back to user
+        if (userMarker) map.setView(userMarker.getLatLng(), 14);
+        return;
+      }
+
+      locateBtn.classList.add('locating');
+      map.locate({ watch: true, enableHighAccuracy: true, timeout: 10000 });
+    });
+  </script>
+</body>
+</html>
